@@ -1,0 +1,30 @@
+[package]
+name = "hft"
+description = "Command-line entry point: probe, capture, inspect, verify, run, bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+hft-coinbase.workspace = true
+hft-book.workspace = true
+hft-feed.workspace = true
+hft-recorder.workspace = true
+hft-replay.workspace = true
+hft-sim.workspace = true
+hft-strategy.workspace = true
+hft-experiment.workspace = true
+hft-report.workspace = true
+hft-bench = { path = "../../crates/bench" }
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+hdrhistogram.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

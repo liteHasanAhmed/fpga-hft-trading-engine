@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""Generate hand-designed Coinbase `full`-channel fixtures.
+
+Each fixture is a text log read by `hft_replay::FixtureSource`:
+    <recv_ns> <kind> <payload>
+Payloads are byte-for-byte Coinbase message shapes, so fixtures exercise the
+real parser. A tiny reference book here keeps sequence numbers, remaining sizes
+and `done` messages consistent.
+
+Usage: python3 fixtures/gen.py   (rewrites fixtures/*.log)
+"""
+import json, os, uuid
+from decimal import Decimal
+
+BASE_S = 1790812800  # 2026-10-01T00:00:00Z
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def oid(n):
+    return str(uuid.UUID(int=n))
+
+
+def ts(ms):
+    us = int(round(ms * 1000))
+    s, us = divmod(us, 1_000_000)
+    import datetime as dt
+    t = dt.datetime.fromtimestamp(BASE_S + s, dt.timezone.utc)
+    return t.strftime("%Y-%m-%dT%H:%M:%S") + f".{us:06d}Z"
+
+
+def px(p):
+    return f"{Decimal(p):.2f}"
+
+
+def sz(q):
+    return f"{Decimal(q):.8f}"
+
+
+class Gen:
+    def __init__(self, seq=100, lag_ms=20):
+        self.seq = seq
+        self.lag = lag_ms
+        self.lines = []
+        self.book = {}  # id -> [side, px(Decimal), size(Decimal)], insertion ordered
+        self.next_id = 1000
+        self.trade_id = 1
+
+    def emit(self, t_ms, kind, payload, lag=None):
+        lag = self.lag if lag is None else lag
+        recv_ns = int(round((t_ms + lag) * 1e6)) + BASE_S * 10**9
+        p = payload if isinstance(payload, str) else json.dumps(payload, separators=(",", ":"))
+        self.lines.append((recv_ns, kind, p))
+
+    def comment(self, text):
+        self.lines.append((None, "#", text))
+
+    def msg(self, t, ty, lag=None, **kw):
+        self.seq += 1
+        m = {"type": ty, "time": ts(t), "product_id": "BTC-USD", "sequence": self.seq}
+        m.update(kw)
+        self.emit(t, "ws", m, lag)
+
+    def connect(self, t):
+        self.emit(t, "open", "wss://ws-feed.exchange.coinbase.com", lag=0)
+        self.emit(t, "ws", {"type": "subscriptions", "channels": []}, lag=0)
+
+    def snapshot(self, t, bids, asks, lag=None):
+        """bids/asks: list of (id, price, size). Snapshot sequence = current seq."""
+        for side, lst in (("buy", bids), ("sell", asks)):
+            for i, p, q in lst:
+                self.book[i] = [side, Decimal(p), Decimal(q)]
+        body = {
+            "bids": [[px(p), sz(q), oid(i)] for i, p, q in bids],
+            "asks": [[px(p), sz(q), oid(i)] for i, p, q in asks],
+            "sequence": self.seq,
+            "auction_mode": False,
+            "auction": None,
+            "time": ts(t),
+        }
+        self.emit(t, "snapshot", body, lag)
+
+    def hb(self, t, lag=None):
+        m = {"type": "heartbeat", "sequence": self.seq, "last_trade_id": self.trade_id - 1,
+             "product_id": "BTC-USD", "time": ts(t)}
+        self.emit(t, "ws", m, lag)
+
+    def open(self, t, side, p, q, lag=None, id=None):
+        id = id or self._id()
+        self.msg(t, "received", lag, order_id=oid(id), size=sz(q), price=px(p), side=side, order_type="limit")
+        self.msg(t, "open", lag, order_id=oid(id), price=px(p), remaining_size=sz(q), side=side)
+        self.book[id] = [side, Decimal(p), Decimal(q)]
+        return id
+
+    def cancel(self, t, id, lag=None):
+        side, p, q = self.book.pop(id)
+        self.msg(t, "done", lag, order_id=oid(id), price=px(p), remaining_size=sz(q), side=side, reason="canceled")
+
+    def take(self, t, aggressor, q, limit=None, lag=None):
+        """Market (or marketable limit) order sweeping the opposite side in price-time order."""
+        q = Decimal(q)
+        tid = self._id()
+        maker_side = "sell" if aggressor == "buy" else "buy"
+        self.msg(t, "received", lag, order_id=oid(tid), size=sz(q), side=aggressor, order_type="market")
+        makers = [(i, o) for i, o in self.book.items() if o[0] == maker_side]
+        makers.sort(key=lambda x: x[1][1] if maker_side == "sell" else -x[1][1])  # stable: time priority
+        for i, o in makers:
+            if q <= 0:
+                break
+            if limit is not None and ((aggressor == "buy" and o[1] > Decimal(limit)) or (aggressor == "sell" and o[1] < Decimal(limit))):
+                break
+            fill = min(q, o[2])
+            self.msg(t, "match", lag, trade_id=self.trade_id, maker_order_id=oid(i), taker_order_id=oid(tid),
+                     size=sz(fill), price=px(o[1]), side=maker_side)
+            self.trade_id += 1
+            o[2] -= fill
+            q -= fill
+            if o[2] == 0:
+                self.msg(t, "done", lag, order_id=oid(i), price=px(o[1]), remaining_size=sz(0), side=maker_side, reason="filled")
+                del self.book[i]
+        self.msg(t, "done", lag, order_id=oid(tid), remaining_size=sz(0), side=aggressor, reason="filled")
+
+    def _id(self):
+        self.next_id += 1
+        return self.next_id
+
+    def write(self, name, header):
+        with open(os.path.join(HERE, name), "w") as f:
+            f.write(f"# GENERATED by fixtures/gen.py — do not edit by hand.\n")
+            for h in header.strip().splitlines():
+                f.write(f"# {h}\n")
+            for recv, kind, p in self.lines:
+                if recv is None:
+                    f.write(f"\n# {p}\n")
+                else:
+                    f.write(f"{recv} {kind} {p}\n")
+
+
+def basic():
+    g = Gen()
+    g.connect(0)
+    g.snapshot(10, bids=[(1, "100.00", "1"), (2, "99.99", "2")], asks=[(3, "100.01", "1"), (4, "100.02", "2")])
+    g.hb(20)
+    g.comment("t=200ms: seller takes 0.3 at 100.00 -> our 0.01 bid at 100.00 fills (trade touches)")
+    g.take(200, "sell", "0.3")
+    g.comment("t=600ms: buyer takes 0.2 at 100.01 -> our 0.01 ask at 100.01 fills")
+    g.take(600, "buy", "0.2")
+    for t in range(1020, 3100, 1000):
+        g.hb(t)
+    g.write("basic.log", """
+Round trip with a constant 20 ms feed lag. Expected with quote size 0.01 BTC and zero order latency:
+  buy 0.01 @ 100.00, sell 0.01 @ 100.01  ->  gross P&L = +0.0001 USD, inventory 0.
+  Professional fees (0% maker): net +0.0001.  Retail (0.60% maker): fees 0.0120006, net -0.0119006.
+""")
+
+
+def stale():
+    g = Gen()
+    g.connect(0)
+    g.snapshot(10, bids=[(1, "100.00", "1"), (2, "99.99", "2")], asks=[(3, "100.01", "1"), (4, "100.02", "2")])
+    t = 20
+    while t < 2000:
+        g.hb(t)
+        t += 1000
+    g.comment("t=2000..6000ms: feed lag jumps from 20 ms to 800 ms (network/backlog). Market rallies meanwhile.")
+    L = 800
+    g.hb(2000, lag=L)
+    g.cancel(2010, 3, lag=L)
+    g.open(2020, "buy", "100.01", "1", lag=L)
+    g.comment("t=2100: buyer sweeps asks to 100.02 (both arms' stale 100.01 asks are hit; neither can know yet)")
+    g.take(2100, "buy", "2.5", lag=L)
+    g.open(2110, "sell", "100.40", "3", lag=L)
+    g.open(2120, "buy", "100.30", "2", lag=L)
+    g.hb(3000, lag=L)
+    g.comment("t=3500: second leg up. Arm A is still quoting off an 800 ms old book; arm B paused at ~2.8 s")
+    g.take(3500, "buy", "3", lag=L)
+    g.open(3510, "sell", "100.80", "3", lag=L)
+    g.open(3520, "buy", "100.70", "2", lag=L)
+    g.hb(4000, lag=L)
+    g.take(4500, "buy", "3", lag=L)
+    g.open(4510, "sell", "101.20", "3", lag=L)
+    g.open(4520, "buy", "101.10", "2", lag=L)
+    g.hb(5000, lag=L)
+    g.comment("t=6000+: lag back to 20 ms; market calm")
+    t = 6000
+    while t < 12000:
+        g.hb(t)
+        t += 1000
+    g.write("stale.log", """
+Feed lag spike during a rally. Both arms are hit at t=2.1 s (no one can see the move yet).
+From ~2.8 s arm B has evidence of lag and pulls quotes; arm A keeps quoting stale prices
+and is picked off again at 3.5 s and 4.5 s.
+""")
+
+
+class AtGen:
+    """Coinbase Advanced Trade frames (level2 / market_trades / heartbeats).
+
+    Every frame carries a per-connection `sequence_num`; `skip()` drops one to
+    simulate a frame lost by the venue.
+    """
+
+    def __init__(self, lag_ms=20):
+        self.seq = -1
+        self.lag = lag_ms
+        self.lines = []
+        self.trade_id = 1
+
+    def _frame(self, t, channel, events, lag=None):
+        self.seq += 1
+        lag = self.lag if lag is None else lag
+        f = {"channel": channel, "client_id": "", "timestamp": ts(t + 1), "sequence_num": self.seq, "events": events}
+        recv_ns = int(round((t + lag) * 1e6)) + BASE_S * 10**9
+        self.lines.append((recv_ns, "ws", json.dumps(f, separators=(",", ":"))))
+
+    def comment(self, text):
+        self.lines.append((None, "#", text))
+
+    def connect(self, t):
+        self.seq = -1
+        recv_ns = int(round(t * 1e6)) + BASE_S * 10**9
+        self.lines.append((recv_ns, "open", "wss://advanced-trade-ws.coinbase.com"))
+        self._frame(t, "subscriptions", [{"subscriptions": {"level2": ["BTC-USD"]}}], lag=0)
+
+    def close(self, t, why):
+        recv_ns = int(round(t * 1e6)) + BASE_S * 10**9
+        self.lines.append((recv_ns, "close", why))
+
+    def snapshot(self, t, bids, asks):
+        ups = [{"side": "bid", "event_time": "1970-01-01T00:00:00Z", "price_level": px(p), "new_quantity": sz(q)} for p, q in bids]
+        ups += [{"side": "offer", "event_time": "1970-01-01T00:00:00Z", "price_level": px(p), "new_quantity": sz(q)} for p, q in asks]
+        self._frame(t, "l2_data", [{"type": "snapshot", "product_id": "BTC-USD", "updates": ups}])
+
+    def levels(self, t, *ups, lag=None):
+        """ups: (side 'bid'|'offer', price, new_quantity)"""
+        u = [{"side": s, "event_time": ts(t), "price_level": px(p), "new_quantity": sz(q)} for s, p, q in ups]
+        self._frame(t, "l2_data", [{"type": "update", "product_id": "BTC-USD", "updates": u}], lag)
+
+    def trades(self, t_batch, *trs, lag=None):
+        """trs: (t_ms, maker_side 'BUY'|'SELL', price, size) — sent together at t_batch (250 ms batching)."""
+        out = []
+        for t, side, p, q in trs:
+            out.append({"trade_id": str(self.trade_id), "product_id": "BTC-USD", "price": px(p), "size": sz(q), "side": side, "time": ts(t)})
+            self.trade_id += 1
+        self._frame(t_batch, "market_trades", [{"type": "update", "trades": out}], lag)
+
+    def hb(self, t, lag=None):
+        self._frame(t, "heartbeats", [{"current_time": ts(t), "heartbeat_counter": int(t)}], lag)
+
+    def skip(self):
+        self.seq += 1
+
+    def write(self, name, header):
+        with open(os.path.join(HERE, name), "w") as f:
+            f.write("# GENERATED by fixtures/gen.py — do not edit by hand.\n")
+            f.write("# venue: coinbase-advanced\n")
+            for h in header.strip().splitlines():
+                f.write(f"# {h}\n")
+            for recv, kind, p in self.lines:
+                if recv is None:
+                    f.write(f"\n# {p}\n")
+                else:
+                    f.write(f"{recv} {kind} {p}\n")
+
+
+def at_basic():
+    g = AtGen()
+    g.connect(0)
+    g.snapshot(10, bids=[("100.00", "1"), ("99.99", "2")], asks=[("100.01", "1"), ("100.02", "2")])
+    g.hb(20)
+    g.comment("t=200: seller hits 0.3 at 100.00. The trade is printed in the 250 ms batch sent at t=400,")
+    g.comment("after the level update; the simulator still applies it at its engine time (t=200).")
+    g.levels(200, ("bid", "100.00", "0.7"))
+    g.trades(400, (200, "BUY", "100.00", "0.3"))
+    g.comment("t=600: buyer lifts 0.2 at 100.01")
+    g.levels(600, ("offer", "100.01", "0.8"))
+    g.trades(800, (600, "SELL", "100.01", "0.2"))
+    for t in range(1020, 3100, 1000):
+        g.hb(t)
+    g.write("at_basic.log", """
+Advanced Trade (L2) round trip, 20 ms lag. Same economics as basic.log:
+  buy 0.01 @ 100.00, sell 0.01 @ 100.01 -> gross +0.0001 USD, inventory 0.
+""")
+
+
+def at_gap():
+    g = AtGen()
+    g.connect(0)
+    g.snapshot(10, bids=[("100.00", "1")], asks=[("100.01", "1")])
+    g.hb(20)
+    g.levels(100, ("bid", "100.00", "2"))
+    g.comment("one frame lost by the venue: sequence jumps by 2 -> book invalid until resubscribe")
+    g.skip()
+    g.levels(200, ("bid", "100.00", "3"))
+    g.hb(1020)
+    g.close(1100, "reconnect requested")
+    g.comment("reconnect: new connection, sequence restarts, fresh snapshot")
+    g.connect(1200)
+    g.snapshot(1210, bids=[("100.00", "4")], asks=[("100.01", "1")])
+    g.hb(1220)
+    g.write("at_gap.log", """
+Sequence gap on Advanced Trade: frame 3 is missing. Expected: one gap, book invalid
+until the reconnect snapshot, then best bid 100.00 x 4.
+""")
+
+
+if __name__ == "__main__":
+    basic()
+    stale()
+    at_basic()
+    at_gap()
+    print("wrote fixtures/basic.log, stale.log, at_basic.log, at_gap.log")

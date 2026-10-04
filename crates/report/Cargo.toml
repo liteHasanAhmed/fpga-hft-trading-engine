@@ -1,0 +1,19 @@
+[package]
+name = "hft-report"
+description = "Experiment metrics, paired comparisons and Markdown/JSON reports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+hft-sim.workspace = true
+hft-experiment.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

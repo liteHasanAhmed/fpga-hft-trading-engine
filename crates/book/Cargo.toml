@@ -1,0 +1,17 @@
+[package]
+name = "hft-book"
+description = "Level-3 (per-order) order book with aggregated level view and invariant checks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+rustc-hash.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

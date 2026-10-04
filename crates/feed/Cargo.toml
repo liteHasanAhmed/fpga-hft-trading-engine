@@ -1,0 +1,13 @@
+[package]
+name = "hft-feed"
+description = "Feed synchronization state machine: snapshot sync, gap/duplicate handling, book health"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+hft-book.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "hft-replay"
+description = "Recording decoding, text fixtures, deterministic scheduler, replay verification"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+hft-coinbase.workspace = true
+hft-book.workspace = true
+hft-feed.workspace = true
+hft-recorder.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,14 @@
+[package]
+name = "hft-strategy"
+description = "Baseline market maker and stale-data protection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+hft-book.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

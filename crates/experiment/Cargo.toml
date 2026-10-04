@@ -1,0 +1,25 @@
+[package]
+name = "hft-experiment"
+description = "Paired A/B experiment runner over recordings with fault injection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+hft-book.workspace = true
+hft-feed.workspace = true
+hft-replay.workspace = true
+hft-sim.workspace = true
+hft-strategy.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+hdrhistogram.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+toml.workspace = true

@@ -1,0 +1,72 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+    "crates/coinbase",
+    "crates/book",
+    "crates/feed",
+    "crates/recorder",
+    "crates/replay",
+    "crates/sim",
+    "crates/strategy",
+    "crates/experiment",
+    "crates/report",
+    "crates/bench",
+    "apps/hft",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+hft-core = { path = "crates/core" }
+hft-coinbase = { path = "crates/coinbase" }
+hft-book = { path = "crates/book" }
+hft-feed = { path = "crates/feed" }
+hft-recorder = { path = "crates/recorder" }
+hft-replay = { path = "crates/replay" }
+hft-sim = { path = "crates/sim" }
+hft-strategy = { path = "crates/strategy" }
+hft-experiment = { path = "crates/experiment" }
+hft-report = { path = "crates/report" }
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+clap = { version = "4", features = ["derive"] }
+crc32fast = "1"
+rustc-hash = "2"
+rand = "0.9"
+rand_chacha = "0.9"
+hdrhistogram = "7"
+criterion = "0.7"
+proptest = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+debug = 1
+
+[profile.bench]
+inherits = "release"

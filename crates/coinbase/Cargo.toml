@@ -1,0 +1,24 @@
+[package]
+name = "hft-coinbase"
+description = "Coinbase Exchange L3 (`full` channel) parsing, REST snapshot parsing, and live connectivity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+base64.workspace = true
+
+[lints]
+workspace = true
