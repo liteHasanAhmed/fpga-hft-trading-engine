@@ -1,0 +1,42 @@
+# Demo on the hand-written fixtures (fixtures/stale.log). Seconds-scale windows.
+
+base_feed_latency_ms = 0.0
+equity_sample_ms = 100.0
+
+[sim]
+seed = 1
+order_latency_ns = 0
+cancel_latency_ns = 0
+response_latency_ns = 0
+min_qty = 1
+fill_model = { kind = "trade_touch" }
+fees = { maker_ppm = 0, taker_ppm = 500 }
+
+[mm]
+half_spread_half_ticks = 1
+quote_qty = 1000000
+max_inventory = 5000000
+skew_half_ticks_per_unit = 1
+requote_ticks = 1
+timer_ns = 100000000
+watchdog_ns = 5000000000
+reject_cooldown_ns = 100000000
+
+[guard]
+lag_floor_ns = 150000000
+lag_mult = 5.0
+ewma_alpha = 0.001
+heartbeat_timeout_ns = 2000000000
+resume_after_ns = 500000000
+
+[[scenarios]]
+name = "natural"
+
+[[scenarios]]
+name = "natural-conservative-fills"
+fill_model = { kind = "trade_through" }
+
+[[scenarios]]
+name = "outage-1s-to-8s"
+injected = true
+outages = [{ start_s = 1.0, end_s = 8.0 }]

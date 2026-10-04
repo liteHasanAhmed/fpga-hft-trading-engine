@@ -1,0 +1,29 @@
+[package]
+name = "hft-bench"
+description = "Tick-to-decision latency harness and criterion micro-benchmarks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hft-core.workspace = true
+hft-coinbase.workspace = true
+hft-book.workspace = true
+hft-feed.workspace = true
+hft-recorder.workspace = true
+hft-replay.workspace = true
+hft-strategy.workspace = true
+hdrhistogram.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "hot_path"
+harness = false
+
+# Not using workspace lints: the counting allocator below needs `unsafe impl GlobalAlloc`.
+[lints.rust]
+unsafe_code = "deny"

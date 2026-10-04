@@ -1,0 +1,92 @@
+# Stale-data protection experiment on real recordings.
+#
+# Arm A and arm B share every parameter below; arm B additionally runs the
+# [guard]. Scenario faults are applied identically to both arms.
+#
+# Splits are chronological (seconds from the first message of the recording).
+# Tune guard thresholds on `dev`, choose on `validation`, and run `test` once.
+
+base_feed_latency_ms = 0.0
+equity_sample_ms = 1000.0
+reorder_window_ms = 2000.0       # trades are batched over 250 ms; allow network jitter
+
+[sim]
+seed = 1
+order_latency_ns = 0
+cancel_latency_ns = 0
+response_latency_ns = 0
+min_qty = 1
+fill_model = { kind = "trade_touch" }
+fees = { maker_ppm = 0, taker_ppm = 500 }   # professional tier; report also shows retail
+
+[mm]
+half_spread_half_ticks = 1       # join a 1-tick spread
+quote_qty = 1000000              # 0.01 BTC
+max_inventory = 5000000          # 0.05 BTC
+skew_half_ticks_per_unit = 1
+requote_ticks = 1
+timer_ns = 100000000             # 100 ms
+watchdog_ns = 5000000000         # essential: 5 s without data -> cancel all
+reject_cooldown_ns = 100000000
+
+# Coinbase Advanced Trade level2 updates normally arrive ~200 ms (p99 ~1 s) after
+# engine time, so "stale" must be judged against that venue-specific baseline.
+[guard]
+lag_floor_ns = 1000000000        # never call < 1 s stale
+lag_mult = 3.0                   # stale if > 3x the adaptive baseline
+ewma_alpha = 0.01
+heartbeat_timeout_ns = 2500000000
+resume_after_ns = 1000000000
+
+[[splits]]
+name = "dev"
+start_s = 0
+end_s = 86400
+[[splits]]
+name = "validation"
+start_s = 86400
+end_s = 129600
+[[splits]]
+name = "test"
+start_s = 129600
+end_s = 172800
+
+[[scenarios]]
+name = "natural"
+
+[[scenarios]]
+name = "natural-conservative-fills"
+fill_model = { kind = "trade_through" }
+
+[[scenarios]]
+name = "delay-250ms-30s-every-10m"
+injected = true
+repeat_every_s = 600
+feed_delay = [{ start_s = 300, end_s = 330, extra_ms = 250 }]
+
+[[scenarios]]
+name = "outage-8s-every-10m"
+injected = true
+repeat_every_s = 600
+outages = [{ start_s = 120, end_s = 128 }]
+
+[[scenarios]]
+name = "stall-1s-every-10m"
+injected = true
+repeat_every_s = 600
+stalls = [{ start_s = 450, end_s = 451 }]
+
+[[scenarios]]
+name = "latency-25ms"
+injected = true
+order_latency_ms = 25
+cancel_latency_ms = 25
+response_latency_ms = 25
+
+[[scenarios]]
+name = "latency-25ms-conservative"
+injected = true
+order_latency_ms = 25
+cancel_latency_ms = 25
+response_latency_ms = 25
+fill_model = { kind = "trade_through" }

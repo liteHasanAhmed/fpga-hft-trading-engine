@@ -1,0 +1,18 @@
+# systemd unit for a Linux laptop/VM. Replace REPO and USER, then:
+#   sudo cp ops/hft-capture.service /etc/systemd/system/ && sudo systemctl enable --now hft-capture
+# Also disable suspend:  sudo systemctl mask sleep.target suspend.target hibernate.target
+[Unit]
+Description=HFT market-data recorder
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+User=USER
+WorkingDirectory=REPO
+Environment=HFT_HOST_LABEL=old-laptop RUST_LOG=info
+ExecStart=REPO/target/release/hft capture --out REPO/data/coinbase-advanced-btc-usd
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

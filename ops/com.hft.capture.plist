@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps the recorder running 24/7 on a macOS laptop (see ops/README.md).
+  Replace REPO with the absolute path to this repository, then:
+    cp ops/com.hft.capture.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.hft.capture.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.hft.capture</string>
+  <key>WorkingDirectory</key><string>REPO</string>
+  <key>ProgramArguments</key>
+  <array>
+    <!-- caffeinate -i -s keeps the machine awake while the recorder runs -->
+    <string>/usr/bin/caffeinate</string><string>-i</string><string>-s</string>
+    <string>REPO/target/release/hft</string>
+    <string>capture</string>
+    <string>--out</string><string>REPO/data/coinbase-advanced-btc-usd</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HFT_HOST_LABEL</key><string>old-laptop</string>
+    <key>RUST_LOG</key><string>info</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>REPO/data/capture.log</string>
+  <key>StandardErrorPath</key><string>REPO/data/capture.log</string>
+</dict>
+</plist>
